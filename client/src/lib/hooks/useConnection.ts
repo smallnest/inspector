@@ -5,12 +5,9 @@ import {
   SSEClientTransportOptions,
 } from "@modelcontextprotocol/sdk/client/sse.js";
 import {
-  StreamableHTTPClientTransport,
-  StreamableHTTPClientTransportOptions,
-} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import {
   ClientNotification,
   ClientRequest,
+  CompleteResultSchema,
   CreateMessageRequestSchema,
   ListRootsRequestSchema,
   ResourceUpdatedNotificationSchema,
@@ -21,7 +18,6 @@ import {
   PromptReference,
   ResourceReference,
   McpError,
-  CompleteResultSchema,
   ErrorCode,
   CancelledNotificationSchema,
   ResourceListChangedNotificationSchema,
@@ -47,11 +43,7 @@ import { getMCPServerRequestTimeout } from "@/utils/configUtils";
 import { InspectorConfig } from "../configurationTypes";
 
 interface UseConnectionOptions {
-  transportType: "stdio" | "sse" | "streamable-http";
-  command: string;
-  args: string;
   sseUrl: string;
-  env: Record<string, string>;
   bearerToken?: string;
   headerName?: string;
   config: InspectorConfig;
@@ -64,11 +56,7 @@ interface UseConnectionOptions {
 }
 
 export function useConnection({
-  transportType,
-  command,
-  args,
   sseUrl,
-  env,
   bearerToken,
   headerName,
   config,
@@ -308,82 +296,23 @@ export function useConnection({
       }
 
       // Create appropriate transport
-      let transportOptions:
-        | StreamableHTTPClientTransportOptions
-        | SSEClientTransportOptions;
+      let transportOptions: SSEClientTransportOptions = {
+        eventSourceInit: {
+          fetch: (
+            url: string | URL | globalThis.Request,
+            init: RequestInit | undefined,
+          ) => fetch(url, { ...init, headers }),
+        },
+        requestInit: {
+          headers,
+        },
+      };
 
-      let mcpProxyServerUrl;
-      switch (transportType) {
-        case "stdio":
-          mcpProxyServerUrl = new URL(`${getMCPProxyAddress(config)}/stdio`);
-          mcpProxyServerUrl.searchParams.append("command", command);
-          mcpProxyServerUrl.searchParams.append("args", args);
-          mcpProxyServerUrl.searchParams.append("env", JSON.stringify(env));
-          transportOptions = {
-            authProvider: serverAuthProvider,
-            eventSourceInit: {
-              fetch: (
-                url: string | URL | globalThis.Request,
-                init: RequestInit | undefined,
-              ) => fetch(url, { ...init, headers }),
-            },
-            requestInit: {
-              headers,
-            },
-          };
-          break;
+      const mcpProxyServerUrl = new URL(`${getMCPProxyAddress(config)}/sse`);
+      mcpProxyServerUrl.searchParams.append("url", sseUrl);
+      mcpProxyServerUrl.searchParams.append("transportType", "sse");
 
-        case "sse":
-          mcpProxyServerUrl = new URL(`${getMCPProxyAddress(config)}/sse`);
-          mcpProxyServerUrl.searchParams.append("url", sseUrl);
-          transportOptions = {
-            eventSourceInit: {
-              fetch: (
-                url: string | URL | globalThis.Request,
-                init: RequestInit | undefined,
-              ) => fetch(url, { ...init, headers }),
-            },
-            requestInit: {
-              headers,
-            },
-          };
-          break;
-
-        case "streamable-http":
-          mcpProxyServerUrl = new URL(`${getMCPProxyAddress(config)}/mcp`);
-          mcpProxyServerUrl.searchParams.append("url", sseUrl);
-          transportOptions = {
-            eventSourceInit: {
-              fetch: (
-                url: string | URL | globalThis.Request,
-                init: RequestInit | undefined,
-              ) => fetch(url, { ...init, headers }),
-            },
-            requestInit: {
-              headers,
-            },
-            // TODO these should be configurable...
-            reconnectionOptions: {
-              maxReconnectionDelay: 30000,
-              initialReconnectionDelay: 1000,
-              reconnectionDelayGrowFactor: 1.5,
-              maxRetries: 2,
-            },
-          };
-          break;
-      }
-      (mcpProxyServerUrl as URL).searchParams.append(
-        "transportType",
-        transportType,
-      );
-
-      const clientTransport =
-        transportType === "streamable-http"
-          ? new StreamableHTTPClientTransport(mcpProxyServerUrl as URL, {
-              sessionId: undefined,
-              ...transportOptions,
-            })
-          : new SSEClientTransport(mcpProxyServerUrl as URL, transportOptions);
+      const clientTransport = new SSEClientTransport(mcpProxyServerUrl, transportOptions);
 
       if (onNotification) {
         [

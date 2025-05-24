@@ -57,11 +57,7 @@ import Sidebar from "./components/Sidebar";
 import ToolsTab from "./components/ToolsTab";
 import { InspectorConfig } from "./lib/configurationTypes";
 import {
-  getMCPProxyAddress,
   getInitialSseUrl,
-  getInitialTransportType,
-  getInitialCommand,
-  getInitialArgs,
   initializeInspectorConfig,
 } from "./utils/configUtils";
 
@@ -83,21 +79,15 @@ const App = () => {
     prompts: null,
     tools: null,
   });
-  const [command, setCommand] = useState<string>(getInitialCommand);
-  const [args, setArgs] = useState<string>(getInitialArgs);
-
   const [sseUrl, setSseUrl] = useState<string>(getInitialSseUrl);
-  const [transportType, setTransportType] = useState<
-    "stdio" | "sse" | "streamable-http"
-  >(getInitialTransportType);
+  const transportType = "sse" as const;
+  const setTransportType = () => {}; // No-op since we only support SSE now
   const [logLevel, setLogLevel] = useState<LoggingLevel>("debug");
   const [notifications, setNotifications] = useState<ServerNotification[]>([]);
   const [stdErrNotifications, setStdErrNotifications] = useState<
     StdErrNotification[]
   >([]);
   const [roots, setRoots] = useState<Root[]>([]);
-  const [env, setEnv] = useState<Record<string, string>>({});
-
   const [config, setConfig] = useState<InspectorConfig>(() =>
     initializeInspectorConfig(CONFIG_LOCAL_STORAGE_KEY),
   );
@@ -176,11 +166,7 @@ const App = () => {
     connect: connectMcpServer,
     disconnect: disconnectMcpServer,
   } = useConnection({
-    transportType,
-    command,
-    args,
     sseUrl,
-    env,
     bearerToken,
     headerName,
     config,
@@ -203,20 +189,8 @@ const App = () => {
   });
 
   useEffect(() => {
-    localStorage.setItem("lastCommand", command);
-  }, [command]);
-
-  useEffect(() => {
-    localStorage.setItem("lastArgs", args);
-  }, [args]);
-
-  useEffect(() => {
     localStorage.setItem("lastSseUrl", sseUrl);
   }, [sseUrl]);
-
-  useEffect(() => {
-    localStorage.setItem("lastTransportType", transportType);
-  }, [transportType]);
 
   useEffect(() => {
     localStorage.setItem("lastBearerToken", bearerToken);
@@ -292,23 +266,7 @@ const App = () => {
     loadOAuthTokens();
   }, [sseUrl]);
 
-  useEffect(() => {
-    fetch(`${getMCPProxyAddress(config)}/config`)
-      .then((response) => response.json())
-      .then((data) => {
-        setEnv(data.defaultEnvironment);
-        if (data.defaultCommand) {
-          setCommand(data.defaultCommand);
-        }
-        if (data.defaultArgs) {
-          setArgs(data.defaultArgs);
-        }
-      })
-      .catch((error) =>
-        console.error("Error fetching default environment:", error),
-      );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
 
   useEffect(() => {
     rootsRef.current = roots;
@@ -566,14 +524,8 @@ const App = () => {
         connectionStatus={connectionStatus}
         transportType={transportType}
         setTransportType={setTransportType}
-        command={command}
-        setCommand={setCommand}
-        args={args}
-        setArgs={setArgs}
         sseUrl={sseUrl}
         setSseUrl={setSseUrl}
-        env={env}
-        setEnv={setEnv}
         config={config}
         setConfig={setConfig}
         bearerToken={bearerToken}

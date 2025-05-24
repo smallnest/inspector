@@ -52,9 +52,6 @@ jest.mock("../../auth", () => ({
 
 describe("useConnection", () => {
   const defaultProps = {
-    transportType: "sse" as const,
-    command: "",
-    args: "",
     sseUrl: "http://localhost:8080",
     env: {},
     config: DEFAULT_INSPECTOR_CONFIG,

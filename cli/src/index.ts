@@ -34,27 +34,31 @@ type Args = {
 function createTransportOptions(target: string[]): TransportOptions {
   if (target.length === 0) {
     throw new Error(
-      "Target is required. Specify a URL or a command to execute.",
+      "Target is required. Specify a URL for the SSE transport.",
     );
   }
 
-  const [command, ...commandArgs] = target;
+  const [urlOrCommand, ...remainingArgs] = target;
 
-  if (!command) {
-    throw new Error("Command is required.");
+  if (!urlOrCommand) {
+    throw new Error("URL or command is required.");
   }
 
-  const isUrl = command.startsWith("http://") || command.startsWith("https://");
+  const isUrl = urlOrCommand.startsWith("http://") || urlOrCommand.startsWith("https://");
 
-  if (isUrl && commandArgs.length > 0) {
-    throw new Error("Arguments cannot be passed to a URL-based MCP server.");
+  if (!isUrl) {
+    throw new Error(
+      `Invalid target: '${urlOrCommand}'. Only SSE URLs (http:// or https://) are supported. Stdio transport has been removed.`,
+    );
+  }
+
+  if (remainingArgs.length > 0) {
+    throw new Error("Arguments cannot be passed when specifying a URL for SSE transport.");
   }
 
   return {
-    transportType: isUrl ? "sse" : "stdio",
-    command: isUrl ? undefined : command,
-    args: isUrl ? undefined : commandArgs,
-    url: isUrl ? command : undefined,
+    transportType: "sse",
+    url: urlOrCommand,
   };
 }
 
