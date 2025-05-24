@@ -1,24 +1,43 @@
 #!/usr/bin/env node
 
-import cors from "cors";
-
+import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
   SSEClientTransport,
   SseError,
 } from "@modelcontextprotocol/sdk/client/sse.js";
+import {
+  StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import express from "express";
 import mcpProxy from "./mcpProxy.js";
 import { randomUUID } from "node:crypto";
+import express from "express";
+import cors from "cors";
 
-const SSE_HEADERS_PASSTHROUGH = ["authorization"];
+// Headers to pass through to the MCP server
+const SSE_HEADERS_PASSTHROUGH = [
+  "authorization",
+  "x-mcp-client-id",
+  "x-mcp-client-version",
+  "x-mcp-client-capabilities"
+];
+
 const STREAMABLE_HTTP_HEADERS_PASSTHROUGH = [
   "authorization",
-  "mcp-session-id",
-  "last-event-id",
+  "x-mcp-client-id",
+  "x-mcp-client-version",
+  "x-mcp-client-capabilities"
 ];
+
+// Helper function to check if an error is an authorization error
+const is401Error = (error: unknown): boolean => {
+  return (
+    (error instanceof SseError && error.code === 401) ||
+    (error instanceof Error && error.message.includes("401")) ||
+    (error instanceof Error && error.message.includes("Unauthorized"))
+  );
+};
 
 const app = express();
 app.use(cors());
@@ -33,33 +52,62 @@ const createTransport = async (req: express.Request): Promise<Transport> => {
   const query = req.query;
   console.log("Query parameters:", query);
 
+  const transportType = query.transportType as string;
   const url = query.url as string;
-  const headers: HeadersInit = {
-    Accept: "text/event-stream",
-  };
 
-  for (const key of SSE_HEADERS_PASSTHROUGH) {
-    if (req.headers[key] === undefined) {
-      continue;
+  if (transportType === "sse") {
+    const headers: HeadersInit = {
+      Accept: "text/event-stream",
+    };
+
+    for (const key of SSE_HEADERS_PASSTHROUGH) {
+      if (req.headers[key] === undefined) {
+        continue;
+      }
+
+      const value = req.headers[key];
+      headers[key] = Array.isArray(value) ? value[value.length - 1] : value;
     }
 
-    const value = req.headers[key];
-    headers[key] = Array.isArray(value) ? value[value.length - 1] : value;
+    console.log(`SSE transport: url=${url}, headers=${Object.keys(headers)}`);
+
+    const transport = new SSEClientTransport(new URL(url), {
+      eventSourceInit: {
+        fetch: (url, init) => fetch(url, { ...init, headers }),
+      },
+      requestInit: {
+        headers,
+      },
+    });
+    await transport.start();
+    console.log("Connected to SSE transport");
+    return transport;
+  } else if (transportType === "streamable-http") {
+    const headers: HeadersInit = {
+      Accept: "text/event-stream, application/json",
+    };
+
+    for (const key of STREAMABLE_HTTP_HEADERS_PASSTHROUGH) {
+      if (req.headers[key] === undefined) {
+        continue;
+      }
+
+      const value = req.headers[key];
+      headers[key] = Array.isArray(value) ? value[value.length - 1] : value;
+    }
+
+    const transport = new StreamableHTTPClientTransport(new URL(url), {
+      requestInit: {
+        headers,
+      },
+    });
+    await transport.start();
+    console.log("Connected to Streamable HTTP transport");
+    return transport;
   }
 
-  console.log(`SSE transport: url=${url}, headers=${Object.keys(headers)}`);
-
-  const transport = new SSEClientTransport(new URL(url), {
-    eventSourceInit: {
-      fetch: (url, init) => fetch(url, { ...init, headers }),
-    },
-    requestInit: {
-      headers,
-    },
-  });
-  await transport.start();
-  console.log("Connected to SSE transport");
-  return transport;
+  console.error(`Invalid transport type: ${transportType}`);
+  throw new Error("Invalid transport type specified");
 };
 
 let backingServerTransport: Transport | undefined;
@@ -78,8 +126,8 @@ app.get("/mcp", async (req, res) => {
       await transport.handleRequest(req, res);
     }
   } catch (error) {
-    console.error("Error in /mcp route:", error);
-    res.status(500).json(error);
+    console.error("Error in /mcp route:", error instanceof Error ? error.message : String(error));
+    res.status(500).json(error instanceof Error ? { message: error.message } : { message: String(error) });
   }
 });
 
@@ -93,10 +141,10 @@ app.post("/mcp", async (req, res) => {
         await backingServerTransport?.close();
         backingServerTransport = await createTransport(req);
       } catch (error) {
-        if (error instanceof SseError && error.code === 401) {
+        if (is401Error(error)) {
           console.error(
             "Received 401 Unauthorized from MCP server:",
-            error.message,
+            error instanceof Error ? error.message : String(error),
           );
           res.status(401).json(error);
           return;
@@ -128,8 +176,8 @@ app.post("/mcp", async (req, res) => {
         req.body,
       );
     } catch (error) {
-      console.error("Error in /mcp POST route:", error);
-      res.status(500).json(error);
+      console.error("Error in /mcp POST route:", error instanceof Error ? error.message : String(error));
+      res.status(500).json(error instanceof Error ? { message: error.message } : { message: String(error) });
     }
   } else {
     try {
@@ -161,12 +209,12 @@ app.get("/sse", async (req, res) => {
       await backingServerTransport?.close();
       backingServerTransport = await createTransport(req);
     } catch (error) {
-      if (error instanceof SseError && error.code === 401) {
+      if (is401Error(error)) {
         console.error(
           "Received 401 Unauthorized from MCP server:",
-          error.message,
+          error instanceof Error ? error.message : String(error),
         );
-        res.status(401).json(error);
+        res.status(401).json(error instanceof Error ? { message: error.message } : { message: String(error) });
         return;
       }
 
@@ -187,9 +235,8 @@ app.get("/sse", async (req, res) => {
     });
 
     console.log("Set up MCP proxy");
-  } catch (error) {
-    console.error("Error in /sse route:", error);
-    res.status(500).json(error);
+  } catch (error) {      console.error("Error in /sse route:", error instanceof Error ? error.message : String(error));
+      res.status(500).json(error instanceof Error ? { message: error.message } : { message: String(error) });
   }
 });
 

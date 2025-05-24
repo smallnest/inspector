@@ -40,8 +40,8 @@ import { useToast } from "../lib/hooks/useToast";
 
 interface SidebarProps {
   connectionStatus: ConnectionStatus;
-  transportType: "sse";
-  setTransportType: (type: "sse") => void;
+  transportType: "sse" | "streamable-http";
+  setTransportType: (type: "sse" | "streamable-http") => void;
   sseUrl: string;
   setSseUrl: (url: string) => void;
   bearerToken: string;
@@ -209,13 +209,14 @@ const Sidebar = ({
             </label>
             <Select
               value={transportType}
-              onValueChange={(value: "sse") => setTransportType(value)}
+              onValueChange={(value: "sse" | "streamable-http") => setTransportType(value)}
             >
               <SelectTrigger id="transport-type-select">
                 <SelectValue placeholder="Select transport type" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="sse">SSE</SelectItem>
+                <SelectItem value="streamable-http">Streamable HTTP</SelectItem>
               </SelectContent>
             </Select>
           </div>

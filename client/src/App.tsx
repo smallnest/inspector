@@ -80,8 +80,7 @@ const App = () => {
     tools: null,
   });
   const [sseUrl, setSseUrl] = useState<string>(getInitialSseUrl);
-  const transportType = "sse" as const;
-  const setTransportType = () => {}; // No-op since we only support SSE now
+  const [transportType, setTransportType] = useState<"sse" | "streamable-http">("sse");
   const [logLevel, setLogLevel] = useState<LoggingLevel>("debug");
   const [notifications, setNotifications] = useState<ServerNotification[]>([]);
   const [stdErrNotifications, setStdErrNotifications] = useState<
@@ -166,6 +165,7 @@ const App = () => {
     connect: connectMcpServer,
     disconnect: disconnectMcpServer,
   } = useConnection({
+    transportType,
     sseUrl,
     bearerToken,
     headerName,

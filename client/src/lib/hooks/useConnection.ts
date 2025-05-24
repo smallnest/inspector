@@ -5,6 +5,10 @@ import {
   SSEClientTransportOptions,
 } from "@modelcontextprotocol/sdk/client/sse.js";
 import {
+  StreamableHTTPClientTransport,
+  StreamableHTTPClientTransportOptions,
+} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import {
   ClientNotification,
   ClientRequest,
   CompleteResultSchema,
@@ -43,6 +47,7 @@ import { getMCPServerRequestTimeout } from "@/utils/configUtils";
 import { InspectorConfig } from "../configurationTypes";
 
 interface UseConnectionOptions {
+  transportType: "sse" | "streamable-http";
   sseUrl: string;
   bearerToken?: string;
   headerName?: string;
@@ -56,6 +61,7 @@ interface UseConnectionOptions {
 }
 
 export function useConnection({
+  transportType,
   sseUrl,
   bearerToken,
   headerName,
@@ -296,7 +302,9 @@ export function useConnection({
       }
 
       // Create appropriate transport
-      let transportOptions: SSEClientTransportOptions = {
+      let transportOptions:
+        | StreamableHTTPClientTransportOptions
+        | SSEClientTransportOptions = {
         eventSourceInit: {
           fetch: (
             url: string | URL | globalThis.Request,
@@ -308,11 +316,13 @@ export function useConnection({
         },
       };
 
-      const mcpProxyServerUrl = new URL(`${getMCPProxyAddress(config)}/sse`);
+      const mcpProxyServerUrl = new URL(`${getMCPProxyAddress(config)}/${transportType}`);
       mcpProxyServerUrl.searchParams.append("url", sseUrl);
-      mcpProxyServerUrl.searchParams.append("transportType", "sse");
+      mcpProxyServerUrl.searchParams.append("transportType", transportType);
 
-      const clientTransport = new SSEClientTransport(mcpProxyServerUrl, transportOptions);
+      const clientTransport = transportType === "sse" 
+        ? new SSEClientTransport(mcpProxyServerUrl, transportOptions as SSEClientTransportOptions)
+        : new StreamableHTTPClientTransport(mcpProxyServerUrl, transportOptions);
 
       if (onNotification) {
         [
